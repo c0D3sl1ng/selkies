@@ -1,0 +1,745 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+// How the client asks for pointer lock, and where the lock is allowed to land. It wants raw movement deltas
+// (unadjustedMovement), which every engine on Linux and Android refuses with
+// NotSupportedError, so the refusal has to end in a plain lock rather than in
+// no lock at all -- and it has to be remembered, or every lock pays for a
+// refused request. macOS is the platform that grants the option and is not
+// asked for it by default, since removing its acceleration curve leaves the
+// pointer heavy and the client has nothing to put in its place; which platform
+// that is has to be decided narrowly, because an iPad reports a Mac's platform
+// string too. The `raw_pointer_motion` setting decides over the platform, on
+// either side, through the shared settings ladder and the core's setter, which
+// switches a lock already held rather than waiting for the next one. The lock belongs to gaming mode alone -- plain fullscreen
+// leaves the pointer to the browser so the dashboard stays usable -- and its
+// caller guards the request (gaming mode, stream fullscreen, not already locked,
+// an input context attached); the request it re-runs after a refusal must pass those
+// guards again, since the page can leave fullscreen while the first one is still
+// pending. Where the engine keeps its own record of the viewport's place on the
+// screen (Gecko), the request waits, for a bounded number of frames, until that
+// record puts the fullscreen viewport at the window's origin.
+//
+// Prints one PASS/FAIL line per check and exits non-zero if any failed.
+
+import { Input } from '../../web/selkies-web-core/lib/input.ts';
+import { RAW_POINTER_MOTION_SPEC, resolveSpec } from '../../web/selkies-web-core/lib/conditional-settings.ts';
+
+let failed = 0;
+
+function check(label, ok, detail = '') {
+    if (!ok) failed++;
+    console.log(`${ok ? 'PASS' : 'FAIL'}  [pointer-lock] ${label}  ${detail}`);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const notSupported = () => {
+    const err = new Error('unadjustedMovement');
+    err.name = 'NotSupportedError';
+    return err;
+};
+
+/**
+ * An element that records how lock was asked for and answers the way `outcome`
+ * says an engine would: 'ok', 'refuse-option' (no raw movement), 'fail'
+ * (rejects everything), or 'no-promise' (pre-promise engine).
+ */
+function makeElement(outcome) {
+    const calls = [];
+    const element = {
+        calls,
+        contains: (node) => node === element,
+        requestPointerLock(options) {
+            calls.push(options && options.unadjustedMovement ? 'unadjusted' : 'plain');
+            if (outcome === 'no-promise') return undefined;
+            if (outcome === 'fail') return Promise.reject(new Error('WrongDocumentError'));
+            if (outcome === 'refuse-option' && options && options.unadjustedMovement) {
+                return Promise.reject(notSupported());
+            }
+            return Promise.resolve();
+        },
+    };
+    return element;
+}
+
+/** An Input with only what the pointer lock paths touch. */
+function makeInput(element, gaming = true, attached = true) {
+    const input = Object.create(Input.prototype);
+    input.element = element;
+    input.isSharedMode = false;
+    input.inputAttached = attached;
+    input.gamingMode = gaming;
+    input.shortcutsEnabled = true;
+    input._pointerSeq = 0;
+    return input;
+}
+
+/** A fresh page: raw movement wanted, and the engine not yet asked for it. */
+function reset(element) {
+    Input.rawPointerMotion = true;
+    Input._rawMotionRefused = false;
+    globalThis.document = { pointerLockElement: null, fullscreenElement: element,
+                            getElementById: () => null };
+    globalThis.window = { screenX: 0, screenY: 0 };
+}
+
+// --- the request itself ---------------------------------------------------
+{
+    const element = makeElement('ok');
+    reset(element);
+    const input = makeInput(element);
+    input._requestPointerLock(element, () => {}, () => {});
+    await sleep(10);
+    check('raw movement is asked for', element.calls.join(',') === 'unadjusted',
+          element.calls.join(','));
+}
+{
+    const element = makeElement('refuse-option');
+    reset(element);
+    const input = makeInput(element);
+    let failures = 0;
+    const lock = () => input._requestPointerLock(element, lock, () => { failures++; });
+    lock();
+    await sleep(10);
+    check('a refused option locks anyway', element.calls.join(',') === 'unadjusted,plain',
+          element.calls.join(','));
+    check('a refused option is not a failure', failures === 0, String(failures));
+    check('the refusal is remembered', Input._rawMotionRefused === true);
+
+    element.calls.length = 0;
+    lock();
+    await sleep(10);
+    check('later locks ask once', element.calls.join(',') === 'plain', element.calls.join(','));
+}
+{
+    const element = makeElement('fail');
+    reset(element);
+    const input = makeInput(element);
+    const errors = [];
+    input._requestPointerLock(element, () => { errors.push('retried'); }, (e) => errors.push(e.message));
+    await sleep(10);
+    check('any other rejection is reported once',
+          element.calls.join(',') === 'unadjusted' && errors.join(',') === 'WrongDocumentError',
+          `${element.calls.join(',')} / ${errors.join(',')}`);
+    check('a real failure does not disable raw movement', Input._rawMotionRefused === false);
+}
+{
+    const element = makeElement('no-promise');
+    reset(element);
+    const input = makeInput(element);
+    input._requestPointerLock(element, () => {}, () => {});
+    await sleep(10);
+    check('a pre-promise engine is asked once', element.calls.join(',') === 'unadjusted',
+          element.calls.join(','));
+}
+
+// --- which platforms are asked ---------------------------------------------
+// macOS is the one platform that GRANTS raw movement and is worse for it: the
+// curve it drops is what carried a slow hand across the remote screen, and the
+// client has nothing to put in its place, so the pointer feels heavy. It is
+// asked plainly instead. The decision is taken once, when the module loads, so
+// it takes a fresh load under a faked navigator to pin it; a query string is
+// what makes the second import a second evaluation rather than the cached one.
+// The cases that matter are the ones where a platform only looks like macOS, or
+// only looks like something else: an iPad reports `MacIntel` too, and a client
+// hint may say `Unknown` on a real Mac.
+{
+    const realNavigator = globalThis.navigator;
+    const setNavigator = (value) => Object.defineProperty(globalThis, 'navigator', {
+        value, configurable: true, writable: true });
+    let seq = 0;
+    const loadUnder = async (nav) => {
+        setNavigator(nav);
+        const mod = await import(`../../web/selkies-web-core/lib/input.ts?platform=${seq++}`);
+        return mod.Input.rawPointerMotion;
+    };
+    try {
+        const asksPlainly = [
+            ['a Mac', { platform: 'MacIntel' }],
+            ['a Mac whose client hint says nothing useful',
+             { platform: 'MacIntel', userAgentData: { platform: 'Unknown' } }],
+            ['a Mac that only reports a client hint', { userAgentData: { platform: 'macOS' } }],
+        ];
+        for (const [what, nav] of asksPlainly) {
+            check(`${what} starts without raw movement`, (await loadUnder(nav)) === false);
+        }
+        const asksForRaw = [
+            ['an iPad in its desktop-class default', { platform: 'MacIntel', maxTouchPoints: 5 }],
+            ['an iPhone', { platform: 'iPhone', maxTouchPoints: 5 }],
+            ['Windows', { platform: 'Win32' }],
+            ['Linux', { platform: 'Linux x86_64' }],
+            ['a navigator that says nothing', {}],
+        ];
+        for (const [what, nav] of asksForRaw) {
+            check(`${what} starts with raw movement`, (await loadUnder(nav)) === true);
+        }
+    } finally {
+        setNavigator(realNavigator);
+    }
+}
+{
+    // What the macOS start means at the request: the option is never asked for,
+    // so there is no refusal to recover from and the first lock is the lock.
+    const element = makeElement('ok');
+    reset(element);
+    Input.rawPointerMotion = false;
+    const input = makeInput(element);
+    let retried = 0;
+    input._requestPointerLock(element, () => { retried++; }, () => {});
+    await sleep(10);
+    check('a macOS start asks plainly the first time', element.calls.join(',') === 'plain',
+          element.calls.join(','));
+    check('and needs no second request', retried === 0, String(retried));
+}
+
+// --- the setting -----------------------------------------------------------
+// The platform only decides until the core resolves `raw_pointer_motion`: the
+// server's default, off on a Mac unless someone chose or the operator set it,
+// and a locked value that nobody overrides.
+{
+    const resolve = (ctx, stored, server) => resolveSpec(
+        RAW_POINTER_MOTION_SPEC, { raw_pointer_motion: server }, ctx, () => stored);
+    check('the setting defaults on where the platform grants or refuses it harmlessly',
+          resolve({ macDesktop: false }, null, { value: true }) === true);
+    check('the setting defaults off on a Mac', resolve({ macDesktop: true }, null, { value: true }) === false);
+    check('a stored choice beats the Mac default', resolve({ macDesktop: true }, 'true', { value: true }) === true);
+    check('an operator value beats the Mac default',
+          resolve({ macDesktop: true }, null, { value: true, overridden: true }) === true);
+    check('a stored choice beats an operator value that is not locked',
+          resolve({ macDesktop: false }, 'false', { value: true, overridden: true }) === false);
+    check('a locked value beats a stored choice',
+          resolve({ macDesktop: true }, 'true', { value: false, locked: true }) === false);
+    const posted = [];
+    RAW_POINTER_MOTION_SPEC.propagate(false, {}, { postToCore: (m) => posted.push(m), postSetting: () => {} });
+    check('a change is propagated to the core as setRawPointerMotion',
+          JSON.stringify(posted) === '[{"type":"setRawPointerMotion","value":false}]', JSON.stringify(posted));
+}
+{
+    // Turned off: the request asks plainly, with no refusal to recover from.
+    const element = makeElement('ok');
+    reset(element);
+    const input = makeInput(element);
+    input.setRawPointerMotion(false);
+    input._requestPointerLock(element, () => {}, () => {});
+    await sleep(10);
+    check('turned off, the lock asks plainly', element.calls.join(',') === 'plain', element.calls.join(','));
+    // Turned back on: asked for again, since nothing was refused.
+    element.calls.length = 0;
+    input.setRawPointerMotion(true);
+    input._requestPointerLock(element, () => {}, () => {});
+    await sleep(10);
+    check('turned on, the lock asks for raw movement', element.calls.join(',') === 'unadjusted',
+          element.calls.join(','));
+}
+{
+    // Turned on after a refusal: the engine is not asked twice for what it refused.
+    const element = makeElement('refuse-option');
+    reset(element);
+    const input = makeInput(element);
+    const lock = () => input._requestPointerLock(element, lock, () => {});
+    lock();
+    await sleep(10);
+    input.setRawPointerMotion(false);
+    input.setRawPointerMotion(true);
+    element.calls.length = 0;
+    lock();
+    await sleep(10);
+    check('a refusal outlives the toggle', element.calls.join(',') === 'plain', element.calls.join(','));
+}
+{
+    // Changed while the stream holds the lock: the held lock is asked again with
+    // the new option, so the change is not deferred to the next lock.
+    const element = makeElement('ok');
+    reset(element);
+    const input = makeInput(element);
+    document.pointerLockElement = element;
+    input.setRawPointerMotion(false);
+    await sleep(10);
+    check('a held lock is re-asked plainly when raw movement is turned off',
+          element.calls.join(',') === 'plain', element.calls.join(','));
+    element.calls.length = 0;
+    input.setRawPointerMotion(true);
+    await sleep(10);
+    check('and re-asked for raw movement when it is turned on', element.calls.join(',') === 'unadjusted',
+          element.calls.join(','));
+    element.calls.length = 0;
+    input.setRawPointerMotion(true);
+    await sleep(10);
+    check('an unchanged setting asks nothing', element.calls.length === 0, element.calls.join(','));
+    document.pointerLockElement = null;
+    input.setRawPointerMotion(false);
+    await sleep(10);
+    check('with no lock held nothing is asked', element.calls.length === 0, element.calls.join(','));
+}
+{
+    // The held lock is on an engine that refuses the option: the refusal is
+    // remembered and the lock is asked plainly again, so it is kept as it was.
+    const element = makeElement('refuse-option');
+    reset(element);
+    const input = makeInput(element);
+    Input.rawPointerMotion = false;
+    document.pointerLockElement = element;
+    input.setRawPointerMotion(true);
+    await sleep(20);
+    check('a held lock whose engine refuses falls back to a plain re-request',
+          element.calls.join(',') === 'unadjusted,plain' && Input._rawMotionRefused === true,
+          `${element.calls.join(',')} refused=${Input._rawMotionRefused}`);
+    document.pointerLockElement = null;
+}
+
+// --- where a lock may land -------------------------------------------------
+// A Ctrl-Shift-Click asks the element it hit, which is the input overlay
+// wherever the overlay covers the stream and one of the sinks under it where it
+// does not: either core's video element, and the ws-core canvases. A lock the
+// guard does not recognize leaves the pointer locked while motion is still sent
+// as absolute position, so the guard has to know every one of them.
+function stage(ids, locked = null) {
+    const made = {};
+    for (const id of ids) made[id] = { id, requestPointerLock: () => Promise.resolve() };
+    globalThis.document = { pointerLockElement: locked, fullscreenElement: null,
+                            getElementById: (id) => made[id] || null };
+    return made;
+}
+
+{
+    const overlay = makeElement('ok');
+    const sinks = ['videoCanvas', 'videoWorkerCanvas', 'videoStream', 'stream'];
+    for (const id of sinks) {
+        const made = stage(sinks);
+        globalThis.document.pointerLockElement = made[id];
+        const input = makeInput(overlay);
+        check(`a lock on ${id} reads as locked to the stream`, input._isStreamLocked());
+    }
+    const made = stage([...sinks, 'sidebar']);
+    const input = makeInput(overlay);
+    globalThis.document.pointerLockElement = overlay;
+    check('a lock on the overlay reads as locked to the stream', input._isStreamLocked());
+    globalThis.document.pointerLockElement = made.sidebar;
+    check('a lock on something else does not', !input._isStreamLocked());
+    globalThis.document.pointerLockElement = null;
+    check('no lock at all does not', !input._isStreamLocked());
+}
+{
+    // The request itself: the click's own element when it is a sink, and the
+    // overlay for anything else -- every element carries requestPointerLock, so
+    // asking whether the target has one picks the target every time.
+    const asked = [];
+    const overlay = makeElement('ok');
+    const sinks = ['stream', 'sidebar'];
+    const made = stage(sinks);
+    for (const el of [overlay, made.stream, made.sidebar]) {
+        el.requestPointerLock = () => { asked.push(el.id || 'overlay'); return Promise.resolve(); };
+    }
+    const input = makeInput(overlay);
+    Object.assign(input, {
+        buttonMask: 1, inputAttached: false, use_browser_cursors: true,
+        cursorDiv: { style: {} }, _trackpadMode: false,
+        _releaseDesyncedModifiers: () => {}, _focusCompositionHost: () => {},
+        _inputDpr: () => 1,
+    });
+    const click = (target) => input._mouseButtonMovement({
+        type: 'mousedown', button: 0, ctrlKey: true, shiftKey: true, target,
+        clientX: 4, clientY: 4, preventDefault: () => {},
+    });
+    click(overlay);
+    click(made.stream);
+    click(made.sidebar);
+    await sleep(10);
+    check('a lock is asked of the sink that was clicked, and of the overlay otherwise',
+          asked.join(',') === 'overlay,stream,overlay', asked.join(','));
+}
+
+// --- the gaming-mode caller -----------------------------------------------
+{
+    const element = makeElement('refuse-option');
+    reset(element);
+    const input = makeInput(element);
+    input._armPointerLock();
+    await sleep(10);
+    check('gaming mode locks through a refusal', element.calls.join(',') === 'unadjusted,plain',
+          element.calls.join(','));
+}
+{
+    // Gecko warps a locked pointer to the viewport's center through its own
+    // record of where the viewport sits on the screen, which a fullscreen
+    // transition updates only once the toolbars it collapses are gone: the
+    // request waits a frame at a time for the viewport to reach the window's
+    // origin, and asks anyway after a bounded wait.
+    const frames = [];
+    globalThis.requestAnimationFrame = (cb) => frames.push(cb);
+    const step = (n) => { for (let i = 0; i < n; i++) frames.splice(0).forEach((cb) => cb()); };
+    const element = makeElement('ok');
+    reset(element);
+    Object.assign(window, { mozInnerScreenX: 0, mozInnerScreenY: 85 });
+    makeInput(element)._armPointerLock();
+    step(3);
+    const waited = element.calls.length;
+    window.mozInnerScreenY = 0;
+    step(1);
+    await sleep(10);
+    check('Gecko is asked for the lock once its viewport sits at the window origin',
+          waited === 0 && element.calls.join(',') === 'unadjusted', `${waited}, then ${element.calls.join(',')}`);
+
+    const stuck = makeElement('ok');
+    reset(stuck);
+    Object.assign(window, { mozInnerScreenX: 0, mozInnerScreenY: 85 });
+    makeInput(stuck)._armPointerLock();
+    step(29);
+    const early = stuck.calls.length;
+    step(1);
+    await sleep(10);
+    check('a viewport that never gets there is asked after a bounded wait',
+          early === 0 && stuck.calls.join(',') === 'unadjusted', `${early}, then ${stuck.calls.join(',')}`);
+    delete globalThis.requestAnimationFrame;
+}
+{
+    // Plain fullscreen: the pointer is the browser's, so nothing is asked for.
+    const element = makeElement('ok');
+    reset(element);
+    makeInput(element, false)._armPointerLock();
+    await sleep(10);
+    check('plain fullscreen asks for no lock', element.calls.length === 0, element.calls.join(','));
+}
+{
+    // The page leaves fullscreen while the first request is still pending
+    const element = makeElement('refuse-option');
+    reset(element);
+    const input = makeInput(element);
+    element.requestPointerLock = (options) => {
+        element.calls.push(options && options.unadjustedMovement ? 'unadjusted' : 'plain');
+        if (options && options.unadjustedMovement) {
+            return new Promise((_, reject) => setTimeout(() => reject(notSupported()), 20));
+        }
+        return Promise.resolve();
+    };
+    input._armPointerLock();
+    document.fullscreenElement = null;
+    await sleep(60);
+    check('leaving fullscreen stops the retried request',
+          element.calls.join(',') === 'unadjusted', element.calls.join(','));
+}
+{
+    const element = makeElement('fail');
+    reset(element);
+    const input = makeInput(element);
+    input._armPointerLock();
+    await sleep(700);
+    // The transition race is retried a few times; asking for raw movement must
+    // not double the requests that budget allows
+    check('a failing lock retries a bounded number of times',
+          element.calls.length === 6, String(element.calls.length));
+}
+{
+    const element = makeElement('ok');
+    reset(element);
+    const input = makeInput(element);
+    document.fullscreenElement = null;
+    input._armPointerLock();
+    document.fullscreenElement = element;
+    document.pointerLockElement = element;
+    input._armPointerLock();
+    document.pointerLockElement = null;
+    input.inputAttached = false;
+    input._armPointerLock();
+    await sleep(10);
+    input.inputAttached = true;
+    input.gamingMode = false;
+    input._armPointerLock();
+    await sleep(10);
+    check('no lock outside fullscreen, when locked, without an input context, or outside gaming mode',
+          element.calls.length === 0, element.calls.join(','));
+}
+{
+    // A viewer the server granted mouse and keyboard access holds a context
+    // while it keeps the viewer role, and gaming mode is where its relative
+    // motion comes from; a viewer holding no context is the one refused.
+    const element = makeElement('ok');
+    reset(element);
+    const input = makeInput(element);
+    input.isSharedMode = true;
+    input._armPointerLock();
+    await sleep(10);
+    check('a viewer granted an input context locks the pointer in gaming mode',
+          element.calls.length === 1, element.calls.join(','));
+
+    const refused = makeElement('ok');
+    reset(refused);
+    const viewer = makeInput(refused, true, false);
+    viewer.isSharedMode = true;
+    viewer._armPointerLock();
+    await sleep(10);
+    check('a viewer without one is refused it',
+          refused.calls.length === 0, refused.calls.join(','));
+}
+
+// --- the two fullscreen modes ---------------------------------------------
+{
+    const element = makeElement('ok');
+    reset(element);
+    const events = [];
+    const keyboard = { calls: [], keys: [],
+                       lock: (keys) => { keyboard.calls.push('lock'); keyboard.keys.push(keys); return Promise.resolve(); },
+                       unlock: () => keyboard.calls.push('unlock') };
+    Object.defineProperty(globalThis, 'navigator', { value: { keyboard }, configurable: true });
+    const requested = [];
+    document.documentElement = { requestFullscreen: () => { requested.push('fullscreen'); return Promise.resolve(); } };
+    document.exitPointerLock = () => { document.pointerLockElement = null; };
+    const input = makeInput(element, false);
+    input.ongamingmode = (active) => events.push(active);
+    input.send = () => {};
+    input.resetKeyboard = () => {};
+
+    document.fullscreenElement = null;
+    input.enterFullscreen();
+    await sleep(10);
+    check('plain fullscreen is fullscreen and nothing else',
+          requested.join(',') === 'fullscreen' && input.gamingMode === false && events.length === 0,
+          `${requested.join(',')} gaming=${input.gamingMode} events=${events.join(',')}`);
+
+    // What the engine reports once the transition lands, with no mode asked for.
+    document.fullscreenElement = element;
+    input._onFullscreenChange();
+    await sleep(10);
+    check('plain fullscreen locks neither pointer nor keyboard',
+          element.calls.length === 0 && keyboard.calls.length === 0,
+          `${element.calls.join(',')} / ${keyboard.calls.join(',')}`);
+
+    document.fullscreenElement = null;
+    input.enterGamingMode();
+    await sleep(10);
+    check('gaming mode asks for fullscreen and announces itself',
+          requested.length === 2 && input.gamingMode === true && events.join(',') === 'true',
+          `${requested.join(',')} gaming=${input.gamingMode} events=${events.join(',')}`);
+
+    document.fullscreenElement = element;
+    input._onFullscreenChange();
+    await sleep(10);
+    check('gaming mode takes the pointer and the keyboard',
+          element.calls.length > 0 && keyboard.calls.join(',') === 'lock',
+          `${element.calls.join(',')} / ${keyboard.calls.join(',')}`);
+    // Every key, the browser's own shortcuts among them, as a fullscreen asked
+    // for with keyboardLock "browser" holds them in Firefox and Safari.
+    check('the keyboard lock names no keys, so it holds all of them',
+          keyboard.keys.length === 1 && keyboard.keys[0] === undefined, JSON.stringify(keyboard.keys));
+
+    document.fullscreenElement = null;
+    input._onFullscreenChange();
+    await sleep(10);
+    check('leaving fullscreen leaves gaming mode',
+          input.gamingMode === false && events.join(',') === 'true,false'
+          && keyboard.calls.join(',') === 'lock,unlock',
+          `gaming=${input.gamingMode} events=${events.join(',')} kb=${keyboard.calls.join(',')}`);
+}
+{
+    // An engine that refuses fullscreen must not leave the mode behind: the locks
+    // would then be armed by the next transition the page makes for any reason.
+    const element = makeElement('ok');
+    reset(element);
+    document.fullscreenElement = null;
+    document.documentElement = { requestFullscreen: () => Promise.reject(new Error('denied')) };
+    const input = makeInput(element, false);
+    const events = [];
+    input.ongamingmode = (active) => events.push(active);
+    input.enterGamingMode();
+    await sleep(20);
+    check('a refused fullscreen rolls the mode back',
+          input.gamingMode === false && events.join(',') === 'true,false',
+          `gaming=${input.gamingMode} events=${events.join(',')}`);
+}
+
+// --- the mode's lock goes with the mode -------------------------------------
+// The lock is taken on the gesture, before fullscreen, so leaving the mode
+// without a fullscreen to exit (a refused request, or one the page never got)
+// must release it: held, it keeps every click from the page's own controls.
+// A lock the engine grants only after the mode was left goes the same way.
+for (const how of ['refused', 'toggled', 'late']) {
+    const element = makeElement('ok');
+    reset(element);
+    let grant = null;
+    const ask = element.requestPointerLock.bind(element);
+    element.requestPointerLock = (options) => {
+        const answer = ask(options);
+        const take = () => { document.pointerLockElement = element; };
+        if (how === 'late') return new Promise((resolve) => { grant = () => { take(); resolve(); }; });
+        return answer.then(take);
+    };
+    const exits = [];
+    document.exitPointerLock = () => { exits.push('exit'); document.pointerLockElement = null; };
+    document.fullscreenElement = null;
+    document.documentElement = { requestFullscreen: () => (how === 'refused'
+        ? Promise.reject(new Error('denied')) : new Promise(() => {})) };
+    const input = makeInput(element, false);
+    input.ongamingmode = () => {};
+    input.send = () => {};
+    input.enterGamingMode();
+    await sleep(20);
+    if (how !== 'refused') input.toggleGamingMode();
+    if (how === 'late') grant();
+    await sleep(how === 'late' ? 20 : 400);
+    check({ refused: 'a refused fullscreen releases the pointer the mode locked',
+            toggled: 'the mode left with no fullscreen to exit releases the pointer',
+            late: 'a lock granted after the mode was left is released' }[how],
+          input.gamingMode === false && document.pointerLockElement === null && exits.length === 1,
+          `gaming=${input.gamingMode} locked=${document.pointerLockElement !== null} exits=${exits.length}`);
+}
+
+// --- the lock on the gesture, before fullscreen -----------------------------
+// A fullscreen request spends the gesture's transient activation, and Chromium
+// refuses a pointer lock asked for without one, in fullscreen as well (Edge on
+// Windows refused every entry by the dashboard's button). So gaming mode asks
+// for the lock first and fullscreen once the lock settled; a raw request the
+// platform refuses is asked again plainly before fullscreen, and an engine
+// whose request never settles still gets its fullscreen.
+for (const outcome of ['ok', 'refuse-option', 'never']) {
+    const order = [];
+    const element = makeElement(outcome === 'never' ? 'ok' : outcome);
+    reset(element);
+    const ask = element.requestPointerLock.bind(element);
+    element.requestPointerLock = (options) => {
+        order.push(options && options.unadjustedMovement ? 'lock-raw' : 'lock');
+        return outcome === 'never' ? new Promise(() => {}) : ask(options);
+    };
+    document.fullscreenElement = null;
+    document.pointerLockElement = null;
+    document.documentElement = { requestFullscreen: () => { order.push('fullscreen'); return Promise.resolve(); } };
+    const input = makeInput(element, false);
+    input.ongamingmode = () => {};
+    input.enterGamingMode();
+    await sleep(outcome === 'never' ? 400 : 20);
+    const want = { ok: 'lock-raw,fullscreen', 'refuse-option': 'lock-raw,lock,fullscreen', never: 'lock-raw,fullscreen' }[outcome];
+    check({ ok: 'gaming mode asks for the pointer lock before fullscreen, on the same gesture',
+            'refuse-option': 'a raw lock the platform refuses is asked again plainly, still before fullscreen',
+            never: 'a lock request that never settles still lets fullscreen through' }[outcome],
+          order.join(',') === want, order.join(','));
+}
+
+{
+    // Gecko grants a lock in fullscreen without a gesture and measures the first
+    // movement of one taken before the switch from where the viewport was: there
+    // fullscreen goes first, and the lock follows once it landed.
+    const order = [];
+    const element = makeElement('ok');
+    reset(element);
+    const ask = element.requestPointerLock.bind(element);
+    element.requestPointerLock = (options) => { order.push('lock'); return ask(options); };
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0' }, configurable: true });
+    document.fullscreenElement = null;
+    document.pointerLockElement = null;
+    document.documentElement = { requestFullscreen: () => { order.push('fullscreen'); return Promise.resolve(); } };
+    const input = makeInput(element, false);
+    input.ongamingmode = () => {};
+    input.send = () => {};
+    input.resetKeyboard = () => {};
+    input.enterGamingMode();
+    await sleep(20);
+    document.fullscreenElement = element;
+    input._onFullscreenChange();
+    await sleep(60);
+    if (saved) Object.defineProperty(globalThis, 'navigator', saved);
+    check('Firefox asks for fullscreen first and the lock once it landed', order[0] === 'fullscreen' && order.includes('lock'),
+          order.join(','));
+}
+
+// --- a keyboard the engine will not lock -----------------------------------
+// Without the Keyboard Lock API a single Escape leaves fullscreen and the
+// pointer lock, and gaming mode with them; the page can neither prevent that
+// nor see the key, so it says so once, naming Brave's Shields where those are
+// what withhold the API. An engine that locks the keyboard hears nothing.
+{
+    const element = makeElement('ok');
+    reset(element);
+    document.fullscreenElement = element;
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    Input._keyboardLockNoticed = false;
+    const input = makeInput(element);
+    const notices = [];
+    input.onnotice = (code, text) => notices.push(`${code}:${text.length > 0}`);
+    input.requestKeyboardLock();
+    input.requestKeyboardLock();
+    check('a missing keyboard lock is announced once, as unavailable',
+          notices.join(',') === 'keyboardLockUnavailable:true', notices.join(','));
+
+    Object.defineProperty(globalThis, 'navigator', { value: { brave: {} }, configurable: true });
+    Input._keyboardLockNoticed = false;
+    notices.length = 0;
+    input.requestKeyboardLock();
+    check('Brave without the API is told about its Shields',
+          notices.join(',') === 'keyboardLockBlockedByShields:true', notices.join(','));
+
+    const keyboard = { calls: [], lock: () => { keyboard.calls.push('lock'); return Promise.resolve(); },
+                       unlock: () => keyboard.calls.push('unlock') };
+    Object.defineProperty(globalThis, 'navigator', { value: { keyboard }, configurable: true });
+    Input._keyboardLockNoticed = false;
+    notices.length = 0;
+    input.requestKeyboardLock();
+    check('an engine that locks the keyboard hears no notice',
+          keyboard.calls.join(',') === 'lock' && notices.length === 0,
+          `${keyboard.calls.join(',')} / ${notices.join(',')}`);
+
+    // A refused lock leaves the system its keys with nothing on screen to say
+    // so; the console does, unless a later request superseded it.
+    const warned = [];
+    const warn = console.warn;
+    console.warn = (...args) => warned.push(args.join(' '));
+    try {
+        for (const name of ['InvalidStateError', 'AbortError']) {
+            const refusing = { lock: () => Promise.reject(Object.assign(new Error(name), { name })),
+                               unlock: () => {} };
+            Object.defineProperty(globalThis, 'navigator', { value: { keyboard: refusing }, configurable: true });
+            input.requestKeyboardLock();
+            await sleep(10);
+        }
+    } finally {
+        console.warn = warn;
+    }
+    check('a refused keyboard lock is logged, a superseded one is not',
+          warned.length === 1 && warned[0].includes('InvalidStateError') && notices.length === 0,
+          `${warned.join(' | ')} / ${notices.join(',')}`);
+}
+
+// --- a fullscreen the page holds already -----------------------------------
+// Firefox and Safari hold the keys only for a fullscreen asked for with
+// keyboardLock "browser". Gaming mode entered from a plain fullscreen asks for
+// the same element again with it, which by the Fullscreen spec sets its keyboard
+// lock with no transition; refused, the page says the keys are the browser's.
+// An engine with the Keyboard Lock API locks through it and is not asked again.
+{
+    const enter = async (element, navigatorValue, answer) => {
+        reset(element);
+        Object.defineProperty(globalThis, 'navigator', { value: navigatorValue, configurable: true });
+        Input._keyboardLockNoticed = false;
+        const asked = [];
+        element.requestFullscreen = (options) => {
+            asked.push(options && options.keyboardLock ? options.keyboardLock : 'none');
+            return answer;
+        };
+        document.fullscreenElement = element;
+        const input = makeInput(element, false);
+        const notices = [];
+        input.onnotice = (code) => notices.push(code);
+        input.enterGamingMode();
+        await sleep(10);
+        return { asked, notices, locked: element.calls.length > 0 };
+    };
+    let got = await enter(makeElement('ok'), {}, Promise.resolve());
+    check('from a fullscreen held already, an engine without the API is asked again with keyboardLock',
+          got.asked.join(',') === 'browser' && got.notices.length === 0 && got.locked,
+          `${got.asked.join(',')} / ${got.notices.join(',')} / locked ${got.locked}`);
+    got = await enter(makeElement('ok'), {}, Promise.reject(new Error('denied')));
+    check('and, refused, says that a single Escape leaves gaming mode',
+          got.notices.join(',') === 'keyboardLockUnavailable' && got.locked,
+          `${got.notices.join(',')} / locked ${got.locked}`);
+    const keyboard = { calls: [], lock: () => { keyboard.calls.push('lock'); return Promise.resolve(); },
+                       unlock: () => {} };
+    got = await enter(makeElement('ok'), { keyboard }, Promise.resolve());
+    check('an engine with the Keyboard Lock API locks through it and is not asked for fullscreen again',
+          got.asked.length === 0 && keyboard.calls.join(',') === 'lock' && got.locked,
+          `${got.asked.join(',')} / ${keyboard.calls.join(',')}`);
+}
+
+process.exit(failed === 0 ? 0 : 1);

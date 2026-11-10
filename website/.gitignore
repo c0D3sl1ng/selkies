@@ -1,0 +1,15 @@
+# deps
+/node_modules
+
+# generated content
+.source
+/public/assets
+/public/rustdoc
+/selkies.json
+/.venv-docs
+
+# build
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo

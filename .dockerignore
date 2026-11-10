@@ -1,0 +1,17 @@
+# Both Dockerfiles build from the repository root, so keep the context small.
+# npm dependencies and every generated bundle are rebuilt inside the image.
+.git
+**/.git
+**/target
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+.ruff_cache
+**/.next
+build/
+out/
+release/
+release-artifacts/
+AppDir/
+infra/appimage/AppDir/

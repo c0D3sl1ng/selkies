@@ -1,0 +1,515 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn-tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-heading: var(--font-sans);
+  --font-sans: 'Inter Variable', sans-serif;
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-destructive-foreground: var(--destructive-foreground);
+}
+
+/* Both themes carry the palette the classic dashboard uses, in shadcn's token
+   names so every component follows: layered slate surfaces (page, card,
+   popover are three distinct steps), the logo's magenta as the accent, and
+   borders solid enough to read as edges rather than a wash of the surface:
+   a field's edge (`input`) reads 3:1 against the surface it sits on, as the
+   sidebar's does, and a slider's empty track (`range-track`) shows where it
+   runs. Text colors are picked against the surface they land on — a filled button's
+   pink is lighter than the accent, because near-black text sits on it. */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  /* Concrete bases the translucency tints from; solid the day it is off. */
+  --background-solid: oklch(1 0 0);
+  --card-solid: oklch(1 0 0);
+  --popover-solid: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #b83280;
+  --primary-foreground: #ffffff;
+  --primary-text: #b83280;
+  /* A pressed-in primary: darker under its white text, so a hovered button reads as well as one at rest. */
+  --primary-hover: color-mix(in oklab, var(--primary) 85%, black);
+  --secondary: #eceef3;
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: #eceef3;
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: #eceef3;
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.55 0.235 27.3);
+  --border: #d5d9e2;
+  --input: #7a8496;
+  --range-track: #8a92a2;
+  --ring: #d5499a;
+  --chart-1: #d5499a;
+  --chart-2: #7967c5;
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  /* The stats graphs' two series and the status marks: a pair validated for
+     this surface (lightness band, chroma floor, CVD and normal-vision
+     separation, 3:1 against the card); a status color pairs with an icon. */
+  --stat-series-1: #a82a69;
+  --stat-series-2: #5b4ba3;
+  --stat-good: #0a7d0a;
+  --stat-warn: #9a6400;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #b83280;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: #d5499a;
+  --destructive-foreground: var(--color-red-700);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --background-solid: oklch(0.145 0 0);
+  --card-solid: oklch(0.205 0 0);
+  --popover-solid: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: #db5ba7;
+  --primary-foreground: oklch(0.145 0 0);
+  --primary-text: #f9a8d4;
+  /* Lighter under its dark text. */
+  --primary-hover: color-mix(in oklab, var(--primary) 85%, white);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: #6e7b94;
+  --range-track: #6e7b94;
+  --ring: #db5ba7;
+  --chart-1: #db5ba7;
+  --chart-2: #9085e9;
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --stat-series-1: #ec4899;
+  --stat-series-2: #9085e9;
+  --stat-good: #0ca30c;
+  --stat-warn: #fab219;
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #db5ba7;
+  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: #db5ba7;
+  --destructive-foreground: var(--color-red-400);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Fixed elements sit off-screen until they open, so the page must not
+       scroll sideways to reach them, from the first paint rather than from
+       whenever the core's own body style lands. */
+    overflow-x: hidden;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* The portal element main.tsx creates, above the stream it overlays and
+   above the touch gamepad overlay, whose controls are drawn over the whole
+   viewport and would otherwise sit on an open panel and take its clicks.
+   The text color is stated here, and on the Base UI portals, because the
+   core's own body style lands after this sheet and paints the page's text
+   white for its stream. */
+#dashboard-root,
+[data-base-ui-portal] {
+  color: var(--foreground);
+}
+#dashboard-root {
+  position: relative;
+  z-index: 2100;
+}
+
+/* Base UI portals (menus, tooltips, dialogs) are body children, so the
+   dashboard root's stacking context would cover them where they overlap a
+   panel; what they position takes the layer above it. Important, as the
+   positioners carry their own z-index. */
+[data-base-ui-portal] > *,
+[data-slot="dialog-overlay"],
+[data-slot="dialog-content"] {
+  z-index: 2200 !important;
+}
+
+/* The browser's range input, drawn as the kit's slider: a thin track filled
+   to the value in the accent (--range-fill, set by RangeSlider) under a
+   round thumb, the thumb larger on a coarse pointer. */
+/* A native scroller drawn with the theme's scrollbar: the compositor moves
+   it, which a scroll area that handles the wheel in script cannot match,
+   and the colors follow the layout's tokens rather than the system theme. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar, var(--border)) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar, var(--border));
+  border-radius: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.range-slider {
+  appearance: none;
+  height: 1rem;
+  background: transparent;
+  cursor: pointer;
+}
+.range-slider:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.range-slider:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+.range-slider::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--primary) var(--range-fill, 0%), var(--range-track) var(--range-fill, 0%));
+}
+.range-slider::-moz-range-track {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: var(--range-track);
+}
+.range-slider::-moz-range-progress {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: var(--primary);
+}
+.range-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.3125rem;
+  border: 1px solid var(--primary);
+  border-radius: 9999px;
+  background: var(--background);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+.range-slider::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--primary);
+  border-radius: 9999px;
+  background: var(--background);
+}
+.range-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--ring);
+}
+.range-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--ring);
+}
+@media (pointer: coarse) {
+  .range-slider::-webkit-slider-thumb {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-top: -0.5625rem;
+  }
+  .range-slider::-moz-range-thumb {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
+/* The list a native select opens is drawn by the browser on its own surface,
+   which is white unless told otherwise, while the options inherit the theme's
+   light text in the dark theme. Naming both from the popover tokens keeps the
+   list legible and in step with the theme. */
+select option,
+select optgroup {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+}
+
+/* What a layout sets to give the shared controls its look, rather than restyling
+   them: the rhythm of every panel (the gap between the rows of a stack, and from
+   a label to its control), a field's height and text, a switch's track, knob and
+   the knob's inset, and the size of a bar's buttons. These are the toolbar
+   layout's, and any layout's that sets none; the sidebar sets its own on
+   `.sidebar`, and a menu packs its rows tighter. */
+:root {
+  --stack-gap: 1rem;
+  --field-gap: 0.375rem;
+  --control-h: 2.25rem;
+  --control-font: 0.875rem;
+  --switch-w: 2.25rem;
+  --switch-h: 1.25rem;
+  --switch-knob: 1rem;
+  --switch-inset: 0px;
+  --bar-button: 2rem;
+  --menu-item-h: 2.25rem;
+}
+/* On a touch screen the controls a finger lands on keep the sidebar's size whatever the window's width: fields and
+   buttons 40 px, bar buttons 36, menu rows 44 (the sidebar sets its own on `.sidebar`). */
+@media (pointer: coarse) {
+  :root {
+    --control-h: 2.5rem;
+    --bar-button: 2.25rem;
+    --menu-item-h: 2.75rem;
+  }
+}
+[role="menu"] {
+  --stack-gap: 0.75rem;
+}
+
+/* The gamepad preview draws raw SVG, so it names the shades the kit's
+   tokens have no name for: a controller's shell, pads, and sticks. */
+:root {
+  --gamepad-canvas: #ffffff;
+  --gamepad-shell-fill: #c6cad3;
+  --gamepad-shell-stroke: #9aa1ad;
+  --gamepad-pad-fill: #c95796;
+  --gamepad-pad-stroke: #a42c73;
+  --gamepad-pad-pressed-fill: #a3136f;
+  --gamepad-stick-base-fill: #dcafc4;
+  --gamepad-stick-top-fill: #8071c8;
+  --gamepad-stick-top-stroke: #5e4da1;
+}
+.dark {
+  --gamepad-canvas: #12161d;
+  --gamepad-shell-fill: #2a313d;
+  --gamepad-shell-stroke: #3d4653;
+  --gamepad-pad-fill: #b0568c;
+  --gamepad-pad-stroke: #d883b4;
+  --gamepad-pad-pressed-fill: #ff97cd;
+  --gamepad-stick-base-fill: #6d4a60;
+  --gamepad-stick-top-fill: #8f81d3;
+  --gamepad-stick-top-stroke: #ada0f5;
+}
+.gamepad-svg-vis {
+  display: block;
+  border: 1px solid var(--input);
+  border-radius: 5px;
+  background-color: var(--gamepad-canvas);
+}
+.gp-vis-base {
+  fill: var(--gamepad-shell-fill);
+  stroke: var(--gamepad-shell-stroke);
+  stroke-width: 0.5;
+}
+.gp-vis-button,
+.gp-vis-dpad,
+.gp-vis-bumper,
+.gp-vis-trigger {
+  fill: var(--gamepad-pad-fill);
+  stroke: var(--gamepad-pad-stroke);
+  stroke-width: 0.5;
+  transition: fill 0.05s linear, opacity 0.05s linear;
+}
+.gp-vis-trigger {
+  opacity: 0.5;
+}
+.gp-vis-stick-base {
+  fill: var(--gamepad-stick-base-fill);
+}
+.gp-vis-stick-top {
+  fill: var(--gamepad-stick-top-fill);
+  stroke: var(--gamepad-stick-top-stroke);
+  stroke-width: 0.5;
+  transition: transform 0.05s linear;
+}
+.gp-vis-button-pressed,
+.gp-vis-dpad-pressed,
+.gp-vis-bumper-pressed {
+  fill: var(--gamepad-pad-pressed-fill);
+}
+
+/* selkies-accent:start */
+/* The accent on the open state of accordions and tabs, for every use of them.
+   Kept outside any @layer: unlayered rules beat the components' own utility
+   classes (`data-active:text-foreground` and the like), which sit in the
+   utilities layer. */
+[data-slot="accordion-item"][data-open] {
+  border-color: color-mix(in oklab, var(--primary) 50%, transparent);
+}
+
+[data-slot="accordion-trigger"][aria-expanded="true"],
+[data-slot="tabs-trigger"][data-active] {
+  color: var(--primary-text);
+}
+
+[data-slot="tabs-trigger"][data-active] {
+  border-color: color-mix(in oklab, var(--primary) 40%, transparent);
+}
+
+/* Separators carry a hint of the accent: the kit's separator, the menus' and
+   button groups', and the rule under an open accordion header. */
+[data-slot="separator"],
+[data-slot="button-group-separator"],
+[data-slot="menu-separator"],
+[data-slot="dropdown-menu-separator"] {
+  background-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+}
+
+[data-slot="accordion-content"] > div {
+  border-top-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+}
+
+/* A switch's knob is white, on or off and in either theme, as the sidebar's
+   is: on the accent when on, on the input gray when off. It covers the kit's
+   switch and the knob of a menu item in its switch variant, a bare span in
+   the checked or unchecked indicator. Unlayered, so it beats the kit's
+   `dark:data-checked:bg-primary-foreground` and the menu's `bg-background`,
+   which are near-black in the dark theme and sink into the track. */
+[data-slot="switch-thumb"],
+[data-slot="menu-checkbox-item"] [data-checked] > span,
+[data-slot="menu-checkbox-item"] [data-unchecked] > span {
+  background-color: #ffffff;
+}
+
+/* An off switch is outlined in the muted text color, so its track reads
+   against the surface at 3:1 as the sidebar's own switch does; the kit's
+   track alone reads 1.3:1 there. */
+[data-slot="switch"][data-unchecked] {
+  border-color: var(--muted-foreground);
+}
+
+/* The thumb of the browser's range input in the accent, ringed in the surface
+   so it stands out from the filled track. Its size and the width of its ring
+   stay with `.range-slider`. */
+.range-slider::-webkit-slider-thumb {
+  border-color: var(--background);
+  background: var(--primary);
+}
+
+.range-slider::-moz-range-thumb {
+  border-color: var(--background);
+  background: var(--primary);
+}
+/* selkies-accent:end */
+
+/* The toasts: Sonner's rich colours, with the light theme's text darkened to read 4.5:1 on its tint (its own
+   success, info, warning and error text fall to 3.1-4.4), and a focus ring in the theme's own, which reads over the
+   stream; Sonner's is a faint black one. */
+.toaster[data-sonner-toaster][data-sonner-theme="light"] {
+  --success-text: #00802b;
+  --info-text: #0869c9;
+  --warning-text: #a25707;
+  --error-text: #d10000;
+}
+.toaster[data-sonner-toaster] [data-sonner-toast]:focus-visible,
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:focus-visible,
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-cancel]:focus-visible,
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* The edge layout's floating button while it rests half hidden: it glows from
+   within, the logo's pink (`--ring`) at its rim and the logo's purple
+   (`--chart-2`) deeper in, both set by `selkies-accent.js` from the logo's
+   colors, and nothing glows outside it. The glow is inside the button's own
+   fill, so it reads the same over any part of the stream; the pink rim and a
+   dark hairline outside it keep the button's edge findable where the stream
+   is pink or pale. */
+.edge-halo {
+  border-color: var(--ring);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.35),
+    inset 0 0 8px 1px var(--ring),
+    inset 0 0 18px 4px color-mix(in oklab, var(--chart-2) 60%, transparent);
+}
+
+/* The translucent-panels knob (`useBarPrefs`' level, mirrored on
+   `data-translucency`): the page's three surface tokens tint to an alpha of
+   their own solid colors, so the bar and every shared panel read the stream
+   through them; borders and text keep their own weights. And a window of the
+   kind it opens is glass only when its backdrop is filtered: the chrome that
+   sits over the stream blurs with the level, paneled by a class of its own
+   (`chrome-panel`) or by a slot the kit names. Blur is a GPU cost paid per
+   surface per frame it shows; the degree stays the one knob that decides it,
+   off at solid. */
+html[data-translucency="1"] {
+  --background: color-mix(in oklab, var(--background-solid) 80%, transparent);
+  --card: color-mix(in oklab, var(--card-solid) 80%, transparent);
+  --popover: color-mix(in oklab, var(--popover-solid) 80%, transparent);
+}
+html[data-translucency="2"] {
+  --background: color-mix(in oklab, var(--background-solid) 65%, transparent);
+  --card: color-mix(in oklab, var(--card-solid) 65%, transparent);
+  --popover: color-mix(in oklab, var(--popover-solid) 65%, transparent);
+}
+html[data-translucency="3"] {
+  --background: color-mix(in oklab, var(--background-solid) 50%, transparent);
+  --card: color-mix(in oklab, var(--card-solid) 50%, transparent);
+  --popover: color-mix(in oklab, var(--popover-solid) 50%, transparent);
+}
+html[data-translucency="1"] :where(.edge-glass, .toolbar, .sidebar, .chrome-panel, [data-slot=card], [data-slot=menu-popup], [data-slot=menu-sub-content], [data-slot=dialog-content], [data-slot=tooltip-content]) { backdrop-filter: blur(6px); }
+html[data-translucency="2"] :where(.edge-glass, .toolbar, .sidebar, .chrome-panel, [data-slot=card], [data-slot=menu-popup], [data-slot=menu-sub-content], [data-slot=dialog-content], [data-slot=tooltip-content]) { backdrop-filter: blur(10px); }
+html[data-translucency="3"] :where(.edge-glass, .toolbar, .sidebar, .chrome-panel, [data-slot=card], [data-slot=menu-popup], [data-slot=menu-sub-content], [data-slot=dialog-content], [data-slot=tooltip-content]) { backdrop-filter: blur(14px); }

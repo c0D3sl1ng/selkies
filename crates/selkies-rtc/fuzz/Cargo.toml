@@ -1,0 +1,64 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Fuzz targets for the parsers of what a WebRTC peer sends, built with `cargo fuzz` (nightly)
+# and run by ClusterFuzzLite (.clusterfuzzlite/, .github/workflows/fuzz.yaml). Each target
+# drives selkies-rtc the way the server does; the crate links no system library, and neither
+# pixelflux nor pcmflux is in its graph. DTLS and SRTP have no target here: selkies-rtc parses
+# neither itself, the pinned rtc-dtls and rtc-srtp crates do, and a finding there is theirs to
+# fix; the bytes they hand over (SCTP, RTP, RTCP) are what the targets below take.
+[package]
+name = "selkies-rtc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1"
+crc32c = "0.6"
+rtc-sctp = "=0.21.1"
+selkies-rtc = { path = ".." }
+
+[[bin]]
+name = "rtp"
+path = "fuzz_targets/rtp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sctp"
+path = "fuzz_targets/sctp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdp"
+path = "fuzz_targets/sdp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stun"
+path = "fuzz_targets/stun.rs"
+test = false
+doc = false
+bench = false
+
+# A crate of its own, outside the workspace above it.
+[workspace]
+members = ["."]
+
+# The workspace's patch, which a crate outside the workspace does not inherit: the association
+# fuzzed, and the DTLS and SRTP selkies-rtc builds on, are the vendored ones the server runs.
+[patch.crates-io]
+rtc-dtls = { path = "../vendor/rtc-dtls" }
+rtc-sctp = { path = "../vendor/rtc-sctp" }
+rtc-srtp = { path = "../vendor/rtc-srtp" }

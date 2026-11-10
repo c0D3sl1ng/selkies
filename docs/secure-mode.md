@@ -1,0 +1,89 @@
+---
+title: Secure Mode
+description: "Token authentication for orchestrated sessions: the master token, session tokens, and how they bind the streaming and API routes."
+---
+
+Selkies has two authentication modes. Without a master token it is in **legacy mode**: the server is either open or behind HTTP Basic authentication (`--enable-basic-auth`, the default, with an optional view-only password), and the browser presents the same credentials on every route. Setting a master token (`--master-token` / `SELKIES_MASTER_TOKEN`) switches the server into **secure mode**, where an orchestrator provisions per-session tokens and every client presents its token instead of a shared login. This page describes secure mode; the login settings are in the [Settings Reference](settings.md).
+
+## Master Token and Session Tokens
+
+The master token is the administrative credential. It is never sent to clients and authenticates two control-plane requests as an `Authorization: Bearer <master token>` header:
+
+- `POST /api/tokens` replaces the session token table. The body is a JSON object keyed by token; each entry carries the client's `role` (`controller` or `viewer`), its gamepad `slot` (`1`-`4`, a list of them such as `[3, 4]` for one client with several controllers, whose pads take them in the browser's order, or `null`), and optionally `mk_control: true` to hand keyboard and mouse authority to that one token (everyone else becomes read-only until the next table drops it). A viewer holding it becomes a read-write collaborator only while `--enable-collab` is on, which is the switch that keeps a deployment view-only whatever the table says; `cmd` and every settings-mutating message stay controller-only either way. No client streams until the first table arrives (the WebSocket transport holds the handshake, WebRTC refuses it). A new table is reconciled against the connected clients at once: a token that disappeared is disconnected, a changed role reconnects the client, a slot change is pushed live, and the input verdict is re-announced on both transports.
+- `--tokens-file` (`SELKIES_TOKENS_FILE`) names a file holding the same table, provisioned at start and again whenever the file changes, so a restart needs no `POST`. Root or the server's user must own it and no one else may write to it, or it is refused; a symlink is followed, as a Kubernetes secret mount is one. A `POST` still replaces the table until the file next changes, and a file that is no table leaves the table as it was.
+- `POST /api/switch` changes the streaming transport (when dual mode is enabled). A controller-role session token is enough — a controller already drives the desktop — and the master token is the operator's way in where a deployment hands out tokens it does not want switching the transport under everyone else. Viewer tokens are refused.
+
+Both control-plane requests also accept the master token in a `Selkies-Authorization: Bearer <master token>` header, tried after `Authorization`. A request carries a single `Authorization` header, so a caller behind a reverse proxy that demands HTTP Basic authentication must spend it on the Basic credentials; the named header lets both travel together:
+
+```console
+curl -u proxyuser:proxypass \
+  -H "Selkies-Authorization: Bearer <master token>" \
+  -X POST https://selkies.example/api/tokens -d @tokens.json
+```
+
+The master token is also accepted as a Bearer credential on every other API route below, so an operator can upload, download, or scrape metrics with it.
+
+A session token is what a client holds. The client page is opened with it in the fragment, `https://host/#token=<session token>`, or in the query, `https://host/?token=<session token>` (a deployment subfolder goes in front as usual). In the fragment it follows a display or sharing keyword after `&` (`#display2-right&token=<session token>`), percent-encoded as a query value is, and the fragment's token wins when a page has both. The token's provisioned role is authoritative: a viewer token cannot drive input, own a display, open a second display, or upload, whatever the page asks for.
+
+A browser never sends the fragment, so a token there reaches no request line, proxy log, or Referer, and the client keeps it out of every URL it requests afterwards: that is the form to hand out wherever a proxy in front logs requests. A query token is in the page's request line, and the client carries it on the URLs it navigates to. The server's own access log is written without query strings, its Referer included, and its logs never print a token.
+
+## How the Routes Are Bound
+
+The static web client (`/`, its scripts and assets) is served without credentials: it is what presents the token. `/api/status` and `/api/health` stay open for probes. Everything else is bound to a token:
+
+| Route | Credential |
+|---|---|
+| `/api/websockets` (WebSocket data transport) | the `selkies.token.<token, base64url without padding>` subprotocol offered beside `selkies`, which the handshake selects, or `?token=` |
+| `/api/webrtc/signaling` (WebRTC signaling) | `client_token` in the HELLO message; the in-process server peer presents the master token |
+| `/api/tokens` | master token only (`Authorization` Bearer, or the `Selkies-Authorization` fallback) |
+| `/api/switch` | session or master token (either header); viewer tokens are refused (403) |
+| `/api/upload` | session or master token; viewer tokens are refused (403) |
+| `/api/files/...` (listing and downloads) | session or master token; viewer tokens are refused (403) |
+| `/api/file-manager/browse` and `/api/file-manager/zip` (the Wish file manager's listing and folder archives) | session or master token; viewer tokens are refused (403), and an archive to another site's page as well |
+| `POST /api/file-manager/mkdir` (a new folder) | session or master token; viewer tokens and another site's page are refused (403) |
+| `/api/print/<name>` (a printed document) | session or master token; viewer tokens and another site's page are refused (403) |
+| `/api/sessions` and `/api/screenshot` | session or master token |
+| `DELETE /api/sessions/<id>`, `POST`, and `DELETE /api/recording` | session or master token (either header); viewer tokens are refused (403) |
+| `GET /api/recording` | session or master token |
+| `/api/turn` (WebRTC ICE/TURN configuration) | session or master token |
+| `/api/metrics` (when `--enable-metrics-http`) | session or master token |
+
+An API request can present its session token in three ways, tried in this order: the `Authorization: Bearer <token>` header, a `?token=` query parameter, or the `selkies_token` cookie. Without a valid token the answer is `401` with `WWW-Authenticate: Bearer realm="Selkies Restricted"`; a valid token with insufficient rights (a viewer uploading) is `403`. Tokens are compared in constant time against the provisioned table; a revoked token stops working immediately.
+
+The web client uses all three for you:
+
+- Every script-driven call (the upload `POST`, the TURN fetch, the transport probes) sends the Bearer header.
+- The data socket of a page holding its token in the fragment offers it as the subprotocol above, on a URL without a query; a query token rides the socket's URL as `?token=`.
+- On a page opened with `?token=`, the file manager the dashboards open in an iframe is loaded as `/api/files/?token=…`, and the listing carries the token on its own links, so it keeps working where a cookie cannot follow (for example when Selkies is itself embedded cross-site). A page holding its token in the fragment leaves the file manager to the cookie.
+- On load the client mirrors its token, URL-encoded, into a `selkies_token` session cookie scoped to `<subfolder>/api/` with `SameSite=Strict` (`Secure` over HTTPS), which covers anything the browser requests on its own, such as a download link or a listing opened by hand. A request that changes state on the cookie alone (an upload) is additionally held to the same-origin rule the mode switch applies. The cookie disappears when the browser closes; the next page load with a token overwrites it.
+
+A Prometheus scrape job uses the master token as its bearer credential:
+
+```yaml
+scrape_configs:
+  - job_name: selkies
+    metrics_path: /api/metrics
+    authorization:
+      credentials: <master token>
+    static_configs:
+      - targets: ["selkies.example:8080"]
+```
+
+## Secure Mode with Basic Authentication
+
+Both can be on. Basic authentication then guards the page load and anything that presents no token; a request that carries a valid session token is accepted on the API routes without Basic credentials (a script's own `Authorization` header replaces the browser's cached ones, so this is what lets the tokened page work behind a login). On the API routes the token decides the role: Basic credentials that come without one count as a viewer and are refused what a viewer token is (uploads, the file listing, printed documents, the mode switch, starting or stopping a recording), since a proxy in front may send the session's own login for every participant. The WebSocket handshakes skip Basic in secure mode and rely on the token, since a browser cannot attach fresh credentials to an upgrade. The mode switch takes a controller session token or the master token.
+
+## Origin Checks
+
+Independent of the mode: `--allowed-origins` (`SELKIES_ALLOWED_ORIGINS`) is the cross-site WebSocket-hijacking guard on the streaming socket. Empty, the default, admits same-origin browsers and non-browser clients that send no `Origin` at all; a comma-separated list admits exactly those origins, which is what an embedding page on another host needs, and `*` admits any. Which pages may show the client in a frame at all is `--frame-ancestors` (`SELKIES_FRAME_ANCESTORS`), sent as the Content-Security-Policy `frame-ancestors` directive: unset or empty it is `'self'`, which refuses every other origin's frame, so another site cannot lay the session under clicks meant for itself; a platform embedding the desktop from another origin lists that origin (a list admits those pages alone), `*` admits any page, and `'none'` refuses every frame.
+
+## Without a Master Token
+
+Nothing above applies but the origin check. The routes are open, or Basic-gated when `--enable-basic-auth` is on: the main password authenticates a controller and the optional `--basic-auth-viewonly-password` a viewer, which is refused everything a viewer token is: uploads, the file listing and downloads, printed documents, and mode switches. Bearer headers and the token cookie are ignored, and the roles a client can take are the [sharing links](usage.md#session-sharing) instead of provisioned tokens. Every Basic-authenticated page load is answered with a `selkies_socket` cookie (HttpOnly, SameSite=Strict, signed for one day by this server process, carrying the login's role) that the streaming socket's handshake accepts in place of the Basic credentials, which WebKit browsers do not attach to a handshake; it authenticates nothing else, and a restart ends it, the page's reconnect taking a new one. A proxy that enforces its own Basic login in front of Selkies challenges the handshake before it arrives here.
+
+## Reference Implementations
+
+Two orchestrators drive secure mode as this page describes it, and are the place to read how the master token, the token table, and the tokened client URL fit together in a service:
+
+- [romm-broker](https://github.com/romm-streaming/romm-broker) starts a container per game session, provisions its tokens through `/api/tokens`, and hands each player a tokened URL.
+- [Sealskin](https://github.com/selkies-project/sealskin)'s [`collaboration.py`](https://github.com/selkies-project/sealskin/blob/main/server/app/collaboration.py) manages the token table of a shared desktop as collaborators join and leave, with the controller, viewer, and gamepad-slot roles above.

@@ -1,0 +1,90 @@
+# The checks the CI lint gate runs, moved ahead of the commit. One-time setup:
+#
+#     pip install pre-commit
+#     pre-commit install
+#
+# Run over the whole tree at any time with `pre-commit run --all-files`. rustfmt
+# and clippy come with the Rust toolchain (`rustup component add rustfmt
+# clippy`); clippy builds the workspace, so it needs the native libraries a
+# test build does and the pixelflux and pcmflux the workspace links.
+#
+# The revisions here and the linter pins in .github/workflows/ci.yaml name the
+# same tools; bump them together. CI additionally runs actionlint over the
+# workflow files, which is left to CI because it needs its own download.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      # Rule selection lives in ruff.toml
+      - id: ruff-check
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      # Skip list and dictionary exceptions live in .codespellrc, and they only
+      # apply to paths codespell walks itself: given explicit filenames it would
+      # spell-check the translation catalogs and generated bundles too
+      - id: codespell
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt --edition 2024
+        language: system
+        types: [rust]
+        # Vendored crates and generated bindings keep upstream's formatting
+        exclude: ^crates/(selkies-rtc/vendor|pixelflux/(nvcodec-sys|va-sys)/src/bindgen)/
+      - id: clippy
+        name: clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: clippy-pixelflux-python
+        name: clippy (pixelflux Python feature)
+        entry: cargo clippy -p pixelflux --all-targets --features python -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: clippy-pcmflux-python
+        name: clippy (pcmflux Python feature)
+        entry: cargo clippy -p pcmflux --all-targets --features python -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: clippy-fuzz
+        name: clippy (fuzz targets)
+        entry: scripts/ci/clippy-fuzz.sh
+        language: script
+        types: [rust]
+        pass_filenames: false
+      - id: web-lint
+        name: eslint and tsc (web client)
+        # The flat configs are per package and their rules read across files, so
+        # each package is linted whole rather than by staged path
+        entry: scripts/ci/lint-web.sh
+        language: script
+        pass_filenames: false
+        files: ^(web/(selkies-dashboard/.*\.(js|jsx|ts|tsx|json)|selkies-web-core/.*\.(js|mjs|ts)|universal-touch-gamepad/.*\.(js|mjs)|eslint\.config\.mjs)|(tests/tools|website/scripts)/.*\.mjs|tests/browserstack/[^/]*\.(ts|json)|tests/image/site/.*\.js|eslint\.config\.mjs)$
+
+      - id: settings-doc
+        name: settings reference (docs/settings.md)
+        # The page is rendered from the setting definitions; a change to either
+        # side without regenerating it fails here
+        entry: scripts/generate-settings-doc.py
+        args: [--check]
+        language: script
+        pass_filenames: false
+        files: ^(crates/selkies/src/settings/(table|mod)\.rs|docs/settings\.md|scripts/generate-settings-doc\.py)$
+
+      - id: file-index
+        name: nginx fancyindex fragments
+        # The fragments are the served file index's own two halves; a change to
+        # one side without regenerating them fails here
+        entry: scripts/generate-file-index.py
+        args: [--check]
+        language: script
+        pass_filenames: false
+        files: ^(crates/selkies/src/files/index_html\.rs|web/selkies-web-core/nginx/.*\.html|scripts/generate-file-index\.py)$

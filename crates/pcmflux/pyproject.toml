@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-rust"]
+build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+build = "cp311-*"
+archs = [ "x86_64", "aarch64" ]
+# glibc 2.17 on x86_64; on aarch64, manylinux_2_28, whose compiler builds the codecs' SVE2
+# kernels (CentOS 7's knows no Armv9).
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux_2_28"
+skip = "*t-*"
+
+[tool.cibuildwheel.environment]
+PCMFLUX_ABI3 = "1"
+PATH = "$HOME/.cargo/bin:$PATH"
+
+[tool.cibuildwheel.linux]
+before-all = """
+    set -euxo pipefail
+    # Rust toolchain (the extension is pure Rust via setuptools-rust/PyO3): rustup's
+    # installer for this machine, checked against the SHA-256 published beside it,
+    # rather than the script that downloads it unchecked.
+    libc="$(if command -v apk > /dev/null; then echo musl; else echo gnu; fi)"
+    url="https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-${libc}/rustup-init"
+    # CentOS 7's curl (manylinux2014) predates --retry-connrefused
+    case "$(curl --help all 2> /dev/null)" in
+        *--retry-connrefused*) refused=--retry-connrefused ;;
+        *) refused= ;;
+    esac
+    curl --proto '=https' --tlsv1.2 -sSf --retry 5 --retry-delay 3 ${refused} -o /tmp/rustup-init "${url}"
+    sum="$(curl --proto '=https' --tlsv1.2 -sSf --retry 5 --retry-delay 3 ${refused} "${url}.sha256")"
+    echo "${sum%% *}  /tmp/rustup-init" | sha256sum -c -
+    chmod +x /tmp/rustup-init && /tmp/rustup-init -y --profile minimal && rm -f /tmp/rustup-init
+    # libpulse (libpulse-sys links it) + libopus (opusic-sys builds the copy it vendors with
+    # cmake and links it statically). libpulse is built from its current release
+    # (scripts/build-libpulse.sh) in every image, since each distribution's takes D-Bus and the
+    # X11 client libraries along; gcc/cmake cover the -sys build steps, from the image's own
+    # repositories, so no third-party one (EPEL, RPM Fusion) is added.
+    if command -v dnf; then
+        dnf install -y \
+            gcc \
+            gcc-c++ \
+            cmake && \
+        /opt/python/cp311-cp311/bin/pip install meson ninja && \
+        PATH="/opt/python/cp311-cp311/bin:$PATH" sh {package}/scripts/build-libpulse.sh /usr lib64 && \
+        ldconfig
+
+    # manylinux2014 (CentOS 7): its devtoolset compilers and the image's cmake build libopus.
+    elif command -v yum; then
+        /opt/python/cp311-cp311/bin/pip install meson ninja && \
+        PATH="/opt/python/cp311-cp311/bin:$PATH" sh {package}/scripts/build-libpulse.sh /usr lib64 && \
+        ldconfig
+
+    # musllinux (Alpine), whose libpulse takes libsndfile's codecs along as well.
+    elif command -v apk; then
+        apk add --no-cache \
+            build-base \
+            cmake && \
+        /opt/python/cp311-cp311/bin/pip install meson ninja && \
+        PATH="/opt/python/cp311-cp311/bin:$PATH" sh {package}/scripts/build-libpulse.sh /usr lib
+    else
+        echo "Unsupported package manager"
+        exit 1
+    fi
+"""
+
+# The manylinux policy leaves libX11 to the host, so the libxcb libpulse needs has to be the host's
+# as well: a bundled copy that loads first binds the host's libX11 to itself, and a library that then
+# calls the host's libxcb on an Xlib connection (the NVIDIA driver's NvFBC) reads another layout.
+[[tool.cibuildwheel.overrides]]
+select = "*-manylinux_*"
+repair-wheel-command = "auditwheel repair --exclude libxcb.so.1 -w {dest_dir} {wheel}"
+
+# Ruff runs as a bug-finder, not a style enforcer: only rule families that flag
+# defects (pyflakes, bugbear, pycodestyle errors, pylint errors) are enabled.
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E9", "F", "B", "PLE"]

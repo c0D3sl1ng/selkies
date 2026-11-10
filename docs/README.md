@@ -1,0 +1,71 @@
+---
+title: Selkies
+description: Open-Source Low-Latency Accelerated Linux WebSocket and WebRTC HTML5 Remote Desktop Streaming Platform for Self-Hosting, Containers, Kubernetes, or Cloud/HPC
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/selkies-project/selkies/main/docs/assets/logo/horizontal.svg" alt="Selkies" width="308">
+</p>
+
+<h1 align="center">Selkies</h1>
+
+<p align="center">Part of <a href="https://www.linuxserver.io"><img src="https://raw.githubusercontent.com/selkies-project/selkies/main/docs/assets/linuxserver.svg" alt="LinuxServer.io" title="LinuxServer.io" width="182" align="middle"></a></p>
+
+[![Build](https://github.com/selkies-project/selkies/actions/workflows/ci.yaml/badge.svg)](https://github.com/selkies-project/selkies/actions/workflows/ci.yaml) [![Release](https://img.shields.io/github/v/release/selkies-project/selkies?display_name=tag)](https://github.com/selkies-project/selkies/releases/latest) [![PyPI](https://img.shields.io/pypi/v/selkies)](https://pypi.org/project/selkies/) [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0) [![Docs](https://img.shields.io/badge/docs-docs.selkies.io-blue)](https://docs.selkies.io/) [![Discord](https://img.shields.io/badge/dynamic/json?logo=discord&label=Discord%20Members&query=approximate_member_count&url=https%3A%2F%2Fdiscordapp.com%2Fapi%2Finvites%2FwDNGDeSW5F%3Fwith_counts%3Dtrue)](https://discord.gg/wDNGDeSW5F) [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/selkies-project/selkies)
+
+**Moonlight, Google Stadia, or GeForce NOW in noVNC form factor for Linux X11 and Wayland, in any HTML5 web interface you wish to embed inside, with at least 60 frames per second on Full HD resolution.**
+
+**We are in need of maintainers and community contributors. Please consider stepping up, as we can never have too much help!**
+
+Selkies is an open-source low-latency high-performance Linux-native GPU/CPU-accelerated HTML5 remote desktop streaming platform, for self-hosting, containers, Kubernetes, or Cloud/HPC platforms, [started out first by Google engineers](https://web.archive.org/web/20210310083658/https://cloud.google.com/solutions/gpu-accelerated-streaming-using-webrtc), then open-sourced and developed by academic researchers, [LinuxServer.io](https://www.linuxserver.io), and community contributors. It streams over plain WebSockets by default, with WebRTC available as an opt-in transport.
+
+Selkies is designed for researchers studying Agentic AI, Graphical AI, Robotics, Autonomous Driving, Drug Discovery technologies, SLURM supercomputer or HPC system administrators, Jupyter, Kubernetes, Docker®, Coder infrastructure administrators, and Linux cloud gaming enthusiasts.
+
+While designed for clustered or unprivileged containerized environments, Selkies can also be deployed in desktop computers, and any performance issue that would be problematic in cloud gaming platforms is also considered a bug.
+
+The HTML5 client runs on Chromium, Firefox, and Safari, with two-way clipboard (text and images), low-latency zero-copy video rendering, automatic GPU selection, resilient keyboard, mouse, and gamepad input, and microphone and webcam forwarding into the session.
+
+Video is H.264, H.265, VP8, VP9, or AV1, chosen from the dashboard, encoded on the GPU wherever it carries the codec (NVENC, VA-API, the Jetson and V4L2 engines) and in software where it does not, with 4:4:4 chroma where both ends carry it, and Motion JPEG as the path that plays everywhere; the same menu drives both transports, and a codec a browser cannot play is stepped past rather than shown as a black screen. Screen capture and encoding are the work of [pixelflux](components/pixelflux.md) and audio of [pcmflux](components/pcmflux.md), two Rust libraries of the same workspace with references at [pixelflux](/rustdoc/pixelflux/index.html) and [pcmflux](/rustdoc/pcmflux/index.html). [Sealskin](https://github.com/selkies-project/sealskin) orchestrates the desktop containers one per user on a single server, an example of building a service on them.
+
+**Please read [Troubleshooting and FAQs](faq.md) first, then use [Discord](https://discord.gg/wDNGDeSW5F) or [GitHub Discussions](https://github.com/selkies-project/selkies/discussions) for support questions. Please only use [Issues](https://github.com/selkies-project/selkies/issues) for technical inquiries or bug reports.**
+
+**NOTE: this project is licensed under the [Mozilla Public License, version 2.0](https://www.mozilla.org/en-US/MPL/2.0/FAQ/), which obliges to share modified code files licensed by MPL-2.0 when distributed externally, but does not apply for any larger work outside this project, which might be open-source or proprietary under any license of choice. Externally originated components outside this project may contain works licensed over more restrictive copyleft/proprietary licenses, as well as other terms of intellectual property, including but not limited to patents, which users or developers are obliged to adhere to.**
+
+[**Licensing**](licensing.md) inventories those components (the crates the server links and the npm dependencies of the web client, the vendored code, the GPL libraries pixelflux brings in) with their licenses.
+
+[**What is Selkies?**](design.md)
+
+[**Getting Started**](start.md)
+
+[**Usage**](usage.md)
+
+[**Settings Reference**](settings.md)
+
+[**Troubleshooting and FAQs**](faq.md)
+
+[**WebRTC and Firewall Issues (cannot connect)**](firewall.md)
+
+[**Secure Mode (token authentication)**](secure-mode.md)
+
+[**Jupyter, Coder, and Open OnDemand**](platforms.md)
+
+[**Components including Encoders and Interfaces**](components/index.md): [pixelflux](components/pixelflux.md), [pcmflux](components/pcmflux.md), the [web client and dashboards](components/web-client.md), the [Base Container](components/base-image.md), the [Desktop Container](components/desktop-image.md), the [KDE Plasma desktops](components/kde-images.md), [gamepads](components/input-interposer.md), the [webcam](components/v4l2-interposer.md), and [TURN](components/turn.md)
+
+[**Development and Contributions**](development.md)
+
+[**Citing Selkies**](citation.md)
+
+## Citations in Academic Publications
+
+**Citations are the currency of scientific research. Citing in your publications is the main driver of keeping this project alive.**
+
+Please read the dedicated [Citing Selkies](citation.md) page. A publication entry is **to be available in the near future**.
+
+**Maintainers of derivative open-source projects should also place the citation page in a clearly visible location of your project.**
+
+---
+This project has been developed and is supported in part by the Seok-San Yonsei Medical Scientist Training Program (MSTP) Song Yong-Sang Scholarship and a Student Research Bursary from the Song-Dang Institute for Cancer Research, from Yonsei University College of Medicine, the MD-PhD/Medical Scientist Training Program (MSTP) and the Young Korean Medical Education & Research Secretariat (Y-KOMERS) Medical Student Overseas Training Bootcamp Program, through the Korea Health Industry Development Institute (KHIDI), funded by the Ministry of Health & Welfare, Republic of Korea, the KREONET Advanced Research Program Grant by the Korea Institute of Science and Technology Information (KISTI), the National Research Foundation of Korea (NRF) grant funded by the Ministry of Science and ICT, Republic of Korea (No. RS-2026-NR121335), the National Research Platform (NRP) and the Cognitive Hardware and Software Ecosystem Community Infrastructure (CHASE-CI) at the University of California, San Diego, by funding from the National Science Foundation (NSF), with awards #1540112, #1541349, #1730158, #1826967, #2100237, #2112167, #2120019, #2138811, and #2616251, as well as additional funding from community partners, infrastructure utilization from the Open Science Grid Consortium, supported by the National Science Foundation (NSF) awards #1836650 and #2030508, and infrastructure utilization from the Chameleon testbed, supported by the National Science Foundation (NSF) awards #1419152, #1743354, #2027170, and #2431425.
+
+Security scanning is provided by [Snyk](https://snyk.io/?utm_source=open-source&utm_medium=pg-ptr&utm_campaign=ref-2501-osp&utm_content=pg-cta). This project is fuzz-tested by Google's [OSS-Fuzz](https://github.com/google/oss-fuzz). This project is tested with BrowserStack. Automated reviews are provided by [Pullfrog](https://pullfrog.com). Internal resources [Powered by DartNode](https://dartnode.com "Powered by DartNode - Free VPS for Open Source").
+
+<sub><sup>\* Funding agencies including, but not limited to the National Science Foundation, remain neutral with regard to jurisdictional claims in published articles and software code of this Code Repository. In the context including, but not limited to this Code Repository, as well as in the context including, but not limited to any and all derivative works based on this Code Repository, all trademarks, trade names, logos, patents, or any and all other forms of external intellectual property, that are mentioned or used, unless otherwise stated, are the property of their respective owners, including but not limited to, The Linux Foundation®, Linus Torvalds, The Apache Software Foundation, Canonical Ltd., Google LLC, Alphabet Inc., NumFOCUS Foundation, Anaconda Inc., conda-forge, Project Jupyter, Coder Technologies, Inc., Docker®, Inc., SchedMD LLC, NVIDIA Corporation, Intel Corporation, Advanced Micro Devices, Inc., Valve Corporation, Epic Games, Inc., Unity Software Inc., Cendio AB, RealVNC® Limited, Amazon.com, Inc., Amazon Web Services, Inc., or its affiliates including but not limited to NICE s.r.l. or NICE USA LLC, Microsoft Corporation, Cloudflare, Inc., Oracle Corporation, StarNet Communications Corporation, TeamViewer SE, Fabrice Bellard, Moonlight Project, and LizardByte. Every best effort has been undertaken to properly identify and attribute trademarks, trade names, logos, patents, or any and all other forms of external intellectual property to their respective owners, unless otherwise stated, wherever possible and practical. The inclusion of such trademarks, trade names, logos, patents, or any and all other forms of external intellectual property in association with this project, unless otherwise stated, serves solely for the purpose of description and must never be construed as an indication of affiliation, competition, endorsement, or a challenge to any and all legal standings of the trademarks, trade names, logos, patents, or any and all other forms of external intellectual property. All project contributors, maintainers, owners, or organizations agree to not willfully breach or infringe legal regulations, in any and all global law, regarding trademarks, trade names, logos, patents, or any and all other forms of external intellectual property. Therefore, all project contributors, maintainers, owners, or organizations, are immune to, and are not to be in any and all cases held legally liable for, any and all jurisdictional claims on trademarks, trade names, logos, patents, or any and all other forms of external intellectual property. No component of this Code Repository is an official product of Google LLC or Alphabet Inc. The README screenshot shows Blender with the [Ellie Pose Library](https://www.blender.org/download/demo-files/) by Blender Studio (CC BY).</sup></sub>

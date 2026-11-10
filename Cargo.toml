@@ -1,0 +1,50 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# The Rust Selkies: one workspace for the server and its capture and encode libraries.
+[workspace]
+resolver = "3"
+members = ["crates/selkies", "crates/selkies-rtc", "crates/pixelflux", "crates/pcmflux"]
+default-members = ["crates/selkies", "crates/selkies-rtc"]
+exclude = [
+    "crates/pixelflux/codec-sys",
+    "crates/pixelflux/va-sys",
+    "crates/pixelflux/nvcodec-sys",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MPL-2.0"
+repository = "https://github.com/selkies-project/selkies"
+
+[workspace.dependencies]
+# The server links pixelflux and pcmflux directly, without either crate's optional Python bridge.
+pixelflux = { path = "crates/pixelflux", default-features = false, features = ["gpl"] }
+pcmflux = { path = "crates/pcmflux", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# rtc-dtls carries the handshake's retransmission fix and rtc-srtp the in-place RTP encryption,
+# both with code-scanning fixes, and rtc-sctp the Selkies SCTP fixes, until they land upstream
+# (crates/selkies-rtc/vendor/*/*-selkies.patch).
+[patch.crates-io]
+rtc-dtls = { path = "crates/selkies-rtc/vendor/rtc-dtls" }
+rtc-sctp = { path = "crates/selkies-rtc/vendor/rtc-sctp" }
+rtc-srtp = { path = "crates/selkies-rtc/vendor/rtc-srtp" }
+
+# Optimized enough to time and to drive a browser with, and rebuilt in seconds rather than the
+# minutes fat LTO takes; numbers quoted anywhere come from `release`.
+[profile.iterate]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 256
+incremental = true
+strip = false
